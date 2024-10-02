@@ -1,0 +1,728 @@
+<!DOCTYPE html><html lang="en-gb"><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,initial-scale=1"><title>mysql master/slave replication - d4nc1ntr33</title><meta name="robots" content="noindex,nofollow"><meta name="generator" content="Publii Open-Source CMS for Static Site"><link rel="preload" href="https://d4nc1ntr33.funkysys.org/assets/dynamic/fonts/publicsans/publicsans.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="https://d4nc1ntr33.funkysys.org/assets/css/style.css?v=0e21f761d0bfa96fcac910b371493717"><script type="application/ld+json">{"@context":"http://schema.org","@type":"Article","mainEntityOfPage":{"@type":"WebPage","@id":"https://d4nc1ntr33.funkysys.org/mysql-masterslave-replication/"},"headline":"mysql master/slave replication","datePublished":"2024-05-11T01:00","dateModified":"2024-05-11T01:16","description":"https://tecadmin.net/how-to-set-up-mysql-master-slave-replication/ MySQL replication is a process where a master server replicates its&hellip;","author":{"@type":"Person","name":"d4nc1ntr33","url":"https://d4nc1ntr33.funkysys.org/authors/dario/"},"publisher":{"@type":"Organization","name":"d4nc1ntr33"}}</script><noscript><style>img[loading] {
+                    opacity: 1;
+                }</style></noscript></head><body><div class="content"><div class="left-bar"><div class="left-bar__inner"><header class="header"><a class="logo" href="https://d4nc1ntr33.funkysys.org/">d4nc1ntr33</a><nav class="navbar"><button class="navbar__toggle" aria-label="Menu" aria-haspopup="true" aria-expanded="false"><span class="navbar__toggle__box"><span class="navbar__toggle__inner">Menu</span></span></button><ul class="navbar__menu"><li><a class="tltp" href="https://d4nc1ntr33.funkysys.org/tags/" target="_self" aria-label="Notes">Notes <span>Notes</span></a></li><li><a href="https://d4nc1ntr33.funkysys.org/tags/" target="_self" aria-label="Bookmarks"><span>Bookmarks</span></a></li></ul></nav><a class="logo logo--atbottom" href="./">d4nc1ntr33</a></header></div></div><main class="main"><article class="post"><div class="main__inner"><div class="post__meta"><div class="post__author"><div><a href="https://d4nc1ntr33.funkysys.org/authors/dario/" class="post__author__name">d4nc1ntr33</a></div></div><div class="post__date"><time datetime="2024-05-11T01:00">May 11, 2024</time></div></div><header class="post__header"><h1 class="post__title">mysql master/slave replication</h1></header><div class="post__entry"><p><a href="https://tecadmin.net/how-to-set-up-mysql-master-slave-replication/">https://tecadmin.net/how-to-set-up-mysql-master-slave-replication/</a></p><p>MySQL replication is a process where a master server replicates its data to one or more slave servers. This can provide several benefits such as increased data availability, improved performance, and easier backups. One important aspect of replication is security, and in this article, we will explore how to configure MySQL master-slave replication with authentication using SSL certificates.</p><p>By using SSL certificates, we can ensure that the data being replicated is secure and can only be accessed by authorized parties. Additionally, SSL certificates can also be used to authenticate the master and slave servers, providing an additional layer of security.</p><p>In this article, we will go through the process of setting up a master-slave replication configuration with SSL certificates, including creating and installing the certificates, configuring the master and slave servers, and troubleshooting common issues.</p><h2 class="heading1">MySQL Replication Benefits</h2><p>The main benefits of MySQL Master-Slave Replication are:</p><ul><li><strong>Performance:</strong> One of the main benefits is that it allows for the offloading of read-only queries from the master database to the slaves, improving the performance and scalability of the database system. This is because the master database is only responsible for handling written transactions, while the slaves can handle read transactions.</li><li><strong>Redundancy and fault tolerance:</strong> Another benefit of MySQL Master-Slave Replication is that it provides a level of redundancy and fault tolerance. If the master database goes down, the slaves can continue to serve read requests, minimizing downtime. Additionally, if a slave database goes down, it can be replaced with a new slave, and the data can be re-synced from the master.</li><li><strong>Backup and Recovery:</strong> MySQL Master-Slave Replication can also be used for backups and data recovery. By regularly taking backups of the slaves, you can have a copy of the data that can be used in case of a disaster on the master database.</li></ul><p>This article will help you to set up master-slave replication between two MySQL servers. This tutorial is tested on Ubuntu 22.04 Linux instance with MySQL 8.0 database server.</p><h2 class="heading1">Setup Details:</h2><p>For testing purposes, I’ve set up two systems within my local network, each assigned a unique IP address from the same network range. These systems are configured as follows:</p><ul><li>Master Server IP: 192.168.1.100</li><li>Slave Server IP: 192.168.1.200</li></ul><p>If you are using different – different versions of MySQL on Master and Slave use <a href="https://dev.mysql.com/doc/refman/8.0/en/replication-compatibility.html" target="_blank" rel="noopener">this link</a> to check compatibility.</p><h2 class="heading1">Step 1: Create SSL Certificates [Master]</h2><p>First, you need to generate a CA certificate. A Certificate Authority (CA) is a trusted third party organization that issues digital certificates used to verify the identity and authenticity of an entity. Then we can generate digital certificate for the master and client system signed by the CA certificate.</p><ol><li>Create a directory to store the new SSL certificates.<pre class="terminal"><code class="terminal-line">mkdir /etc/mysql/certs </code> <code class="terminal-line">cd /etc/mysql/certs </code></pre></li><li>Now, generate the certificate to use as Certificate Authority.<pre class="terminal"><code class="terminal-line">openssl genrsa 4096 &gt; ca-key.pem </code> <code class="terminal-line">openssl req -new -x509 -nodes -days 9999 -key ca-key.pem &gt; ca-cert.pem  </code></pre></li><li>Generate the certificate for the MySQL master server:<pre class="terminal"><code class="terminal-line">openssl req -newkey rsa:4096 -days 9999 -nodes -keyout server-key.pem &gt; server-req.pem </code> <code class="terminal-line">openssl x509 -req -in server-req.pem -days 9999 -CA ca-cert.pem -CAkey ca-key.pem -set_serial 01 &gt; server-cert.pem  </code></pre></li><li>Then generate the certificate for the client (slave) system.<pre class="terminal"><code class="terminal-line">openssl req -newkey rsa:4096 -days 9999 -nodes -keyout client-key.pem &gt; client-req.pem </code> <code class="terminal-line">openssl x509 -req -in client-req.pem -days 9999 -CA ca-cert.pem -CAkey ca-key.pem -set_serial 01 &gt; client-cert.pem  </code></pre></li></ol><p><strong>Important Note:</strong> Make sure to use a different <strong>"Common Name (FQDN)"</strong> for the CA files than the master and client certificate files.</p><h2 class="heading1">Step 2: Update MySQL Configuraion File [Master]</h2><p>Next the MySQL configuration file (eg: /etc/mysql/mysql.conf.d/mysqld.cnf) and add/update the following entries:</p><div class="code-toolbar"><pre class="language-conf" tabindex="0"><code>
+[mysqld]
+server-id = 1
+binlog-format = mixed
+log-bin = mysql-bin
+innodb_flush_log_at_trx_commit = 1
+sync_binlog=1
+
+ssl
+ssl-ca=/etc/mysql/certs/ca-cert.pem
+ssl-cert=/etc/mysql/certs/server-cert.pem
+ssl-key=/etc/mysql/certs/server-key.pem
+</code></pre><div class="toolbar"><div class="toolbar-item"> </div></div></div><h2 class="heading1">Step 3: Create Replication User [Master]</h2><p>In this step, we will create a new user in the MySQL server that will be used to authenticate clients with the master service. So, log in to the MySQL server on the master database server with the root privileged user. Then create a new user, that will be used for the replication process.</p><p>Connect to MySQL server then execute and execute the following queries to create a new user and grant them to slave access.</p><div class="code-toolbar"><pre class="language-sql" tabindex="0"><code>
+CREATE USER 'replication'@'192.168.1.200' IDENTIFIED BY 'aSecUrEPa$$w0rd' REQUIRE SSL;
+GRANT REPLICATION SLAVE ON *.* TO 'replication'@'192.168.1.200';
+FLUSH PRIVILEGES;
+</code></pre><div class="toolbar"><div class="toolbar-item"> </div></div></div><p>Make sure to replace <strong>"192.168.1.200"</strong> with the IP address of slave instance.</p><p>Make sure to use a strong password for the user account.</p><h2 class="heading1">Step 4: Export Databases [Master]</h2><p>Use the <a href="https://tecadmin.net/how-to-import-and-export-mysql-database/">mysqldump</a> utility to export all databases from the master server:</p><pre class="terminal"><code class="terminal-line">mysqldump -uroot -p --skip-lock-tables --single-transaction \
+--flush-logs --hex-blob --master-data=2 -A  | gzip -c &gt; dump.sql.gz </code></pre><p>Next, transfer the export file to the slave server:</p><pre class="terminal"><code class="terminal-line">scp dump.sql.gz root@192.168.1.200: </code></pre><p>This command will request the password for the remote user. After successful authentication, the file will be transferred to the remote server, specifically into the root account's home directory.</p><h2 class="heading1">Step 5: Copy SSL Certificates Files [Master]</h2><p>Copy the client key and certificate and ca certificate files to the slave instance. Make sure that the <strong>"/etc/mysql/certs"</strong> directory exists remote system.</p><pre class="terminal"><code class="terminal-line">scp /etc/mysql/certs/ca-cert.pem root@192.168.1.200:/etc/mysql/certs/ </code> <code class="terminal-line">scp /etc/mysql/certs/client-cert.pem root@192.168.1.200:/etc/mysql/certs/ </code> <code class="terminal-line">scp /etc/mysql/certs/client-key.pem root@192.168.1.200:/etc/mysql/certs/ </code></pre><p><strong>Note:</strong> <a href="https://tecadmin.net/how-to-set-up-ssh-keys-in-linux/">Configure SSH keys</a> for auto login or use passwords to connect to remote.</p><h2 class="heading1">Step 6: Restore Database Backup [Slave]</h2><p>Log in to the MySQL replication client server. Use the <a href="https://tecadmin.net/extracting-compressed-files-in-linux/" target="_blank" rel="noopener">gunzip</a> utility to decompress the dump file. Following that, proceed to restore the database.</p><pre class="terminal"><code class="terminal-line">gunzip dump.sql.gz </code> <code class="terminal-line">mysql -uroot -p -f &lt; dump.sql </code></pre><p>Then check for the Log file position in backup file.</p><pre class="terminal"><code class="terminal-line">head dump.sql -n80 | grep "MASTER_LOG_POS" </code></pre><p>The output will look like this:</p><div class="code-toolbar"><pre class="language-text" tabindex="0" data-label="Output"><code>
+-- CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000007', MASTER_LOG_POS=154;
+</code></pre><div class="toolbar"><div class="toolbar-item">Output</div><div class="toolbar-item"> </div></div></div><p>Note the <strong>MASTER_LOG_FILE</strong> and <strong>MASTER_LOG_POS</strong> values, that will be used later in this article.</p><h2 class="heading1">Step 7: Update Slave MySQL Configuration [Slave]:</h2><p>Next the MySQL configuration file (eg: /etc/mysql/mysql.conf.d/mysqld.cnf) and add/update the folloiwng entries:</p><div class="code-toolbar"><pre class="language-conf" tabindex="0"><code>
+[mysqld]
+server-id  = 2
+binlog-format = mixed
+log-bin = mysql-bin
+relay-log = mysql-relay-bin
+log-slave-updates = 1
+read-only = 1
+</code></pre><div class="toolbar"><div class="toolbar-item"> </div></div></div><h2 class="heading1">Step 8: Start Slave Replication [Slave]</h2><p>Configure the slave instance with the IP address of Master instance along with replication user, their password and the certificate copied from master instance. Make sure to update <code>`mysql-bin.######`</code> and <code>`MASTER_LOG_POS=###`</code> same as we get in step 6. Include all zeros.</p><div class="code-toolbar"><pre class="language-sql" tabindex="0"><code>
+mysql&gt; CHANGE MASTER TO MASTER_HOST='192.168.1.100',MASTER_USER='replication', 
+      MASTER_PASSWORD='aSecUrEPa$$w0rd', 
+      MASTER_SSL_CA='/etc/mysql/certs/ca-cert.pem', 
+      MASTER_SSL_CERT='/etc/mysql/certs/client-cert.pem', 
+      MASTER_SSL_KEY='/etc/mysql/certs/client-key.pem', 
+      MASTER_SSL=1, 
+      MASTER_LOG_FILE='mysql-bin.######', 
+      MASTER_LOG_POS=###;
+</code></pre><div class="toolbar"><div class="toolbar-item"> </div></div></div><p>Finally start the replication process:</p><div class="code-toolbar"><pre class="language-sql" tabindex="0"><code>
+mysql&gt; START SLAVE;
+</code></pre><div class="toolbar"><div class="toolbar-item"> </div></div></div><p>This will enable and start the replication process.</p><h2 class="heading1">Step 9: Verify Replication</h2><p>You can run the <code>`SHOW SLAVE STATUS`</code> query to check for the current status of the replication:</p><div class="code-toolbar"><pre class="language-sql" tabindex="0"><code>
+mysql&gt; SHOW SLAVE STATUS \G
+</code></pre><div class="toolbar"><div class="toolbar-item"> </div></div></div><div class="code-toolbar"><pre class="language-text" tabindex="0" data-label="Output"><code>
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for source to send event
+                  Master_Host: 192.168.1.100
+                  Master_User: replication
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: mysql-bin.000177
+          Read_Master_Log_Pos: 100443919
+               Relay_Log_File: mysql-relay-bin.000498
+                Relay_Log_Pos: 104189538
+        Relay_Master_Log_File: mysql-bin.000169
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+              Replicate_Do_DB:
+          Replicate_Ignore_DB:
+           Replicate_Do_Table:
+       Replicate_Ignore_Table:
+      Replicate_Wild_Do_Table:
+  Replicate_Wild_Ignore_Table:
+                   Last_Errno: 0
+                   Last_Error:
+                 Skip_Counter: 0
+          Exec_Master_Log_Pos: 104189322
+              Relay_Log_Space: 972921462
+              Until_Condition: None
+               Until_Log_File:
+                Until_Log_Pos: 0
+           Master_SSL_Allowed: Yes
+           Master_SSL_CA_File: /etc/mysql/certs/ca-cert.pem
+           Master_SSL_CA_Path:
+              Master_SSL_Cert: /etc/mysql/certs/client-cert.pem
+            Master_SSL_Cipher:
+               Master_SSL_Key: /etc/mysql/certs/client-key.pem
+        Seconds_Behind_Master: 13803
+Master_SSL_Verify_Server_Cert: No
+                Last_IO_Errno: 0
+                Last_IO_Error:
+               Last_SQL_Errno: 0
+               Last_SQL_Error:
+  Replicate_Ignore_Server_Ids:
+             Master_Server_Id: 1
+                  Master_UUID: a548db65-a007-11ec-9f5e-b626277913b3
+             Master_Info_File: mysql.slave_master_info
+                    SQL_Delay: 0
+          SQL_Remaining_Delay: NULL
+      Slave_SQL_Running_State: Waiting for dependent transaction to commit
+           Master_Retry_Count: 86400
+                  Master_Bind:
+      Last_IO_Error_Timestamp:
+     Last_SQL_Error_Timestamp:
+               Master_SSL_Crl:
+           Master_SSL_Crlpath:
+           Retrieved_Gtid_Set:
+            Executed_Gtid_Set:
+                Auto_Position: 0
+         Replicate_Rewrite_DB:
+                 Channel_Name:
+           Master_TLS_Version:
+       Master_public_key_path:
+        Get_master_public_key: 0
+            Network_Namespace:
+1 row in set, 1 warning (0.00 sec)
+</code></pre><div class="toolbar"><div class="toolbar-item">Output</div><div class="toolbar-item"> </div></div></div><p>Check for the value of <strong>"Seconds_Behind_Master"</strong>. The value zero (0) means both systems are synced completely.</p><p> </p><p> </p><p><a href="https://stackoverflow.com/questions/2366018/how-to-re-sync-the-mysql-db-if-master-and-slave-have-different-database-incase-o#3229580">https://stackoverflow.com/questions/2366018/how-to-re-sync-the-mysql-db-if-master-and-slave-have-different-database-incase-o#3229580</a></p><p> </p><div class="answercell post-layout--right"><div class="s-prose js-post-body"><h1>This is the full step-by-step procedure to resync a master-slave replication from scratch:</h1><p><strong>At the master:</strong></p><pre class="lang-sql s-code-block"><code class="hljs language-sql">RESET MASTER;
+FLUSH TABLES <span class="hljs-keyword">WITH</span> READ LOCK;
+<span class="hljs-keyword">SHOW</span> MASTER STATUS;
+</code></pre><p>And <strong>copy the values of the result</strong> of the last command somewhere.</p><p>Without closing the connection to the client (because it would release the read lock) issue the command to get a dump of the master:</p><pre class="lang-sh s-code-block"><code class="hljs language-bash">mysqldump -u root -p --all-databases &gt; /a/path/mysqldump.sql
+</code></pre><p>Now you can release the lock, even if the dump hasn't ended yet. To do it, perform the following command in the MySQL client:</p><pre class="lang-sql s-code-block"><code class="hljs language-sql">UNLOCK TABLES;
+</code></pre><p>Now copy the dump file to the slave using scp or your preferred tool.</p><p><strong>At the slave:</strong></p><p>Open a connection to mysql and type:</p><pre class="lang-sql s-code-block"><code class="hljs language-sql">STOP SLAVE;
+</code></pre><p>Load master's data dump with this console command:</p><pre class="lang-sql s-code-block"><code class="hljs language-sql">mysql <span class="hljs-operator">-</span>uroot <span class="hljs-operator">-</span>p <span class="hljs-operator">&lt;</span> mysqldump.sql
+</code></pre><p>Sync slave and master logs:</p><pre class="lang-sql s-code-block"><code class="hljs language-sql">RESET SLAVE;
+CHANGE MASTER <span class="hljs-keyword">TO</span> MASTER_LOG_FILE<span class="hljs-operator">=</span><span class="hljs-string">'mysql-bin.000001'</span>, MASTER_LOG_POS<span class="hljs-operator">=</span><span class="hljs-number">98</span>;
+</code></pre><p>Where the values of the above fields are the ones you copied before.</p><p>Finally, type:</p><pre class="lang-sql s-code-block"><code class="hljs language-sql"><span class="hljs-keyword">START</span> SLAVE;
+</code></pre><p>To check that everything is working again, after typing:</p><pre class="lang-sql s-code-block"><code class="hljs language-sql"><span class="hljs-keyword">SHOW</span> SLAVE STATUS;
+</code></pre><p>you should see:</p><pre class="lang-sql s-code-block"><code class="hljs language-sql">Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+</code></pre><p>That's it!</p></div><div class="mt24"><div class="d-flex fw-wrap ai-start jc-end gs8 gsy"><time datetime="2010-07-12T15:08:00"></time><div class="flex--item mr16"><div class="js-post-menu pt2" data-post-id="3229580" data-post-type-id="2"><div class="d-flex gs8 s-anchors s-anchors__muted fw-wrap"> </div></div></div><div class="post-signature flex--item fl0"><div class="user-info user-hover"><div class="user-details"><div class="-flair"> </div></div></div></div></div></div></div><div class="post-layout--right js-post-comments-component"><div id="comments-3229580" class="comments js-comments-container bt bc-black-200 mt12" data-post-id="3229580" data-min-length="15"><ul class="comments-list js-comments-list" data-remaining-comments-count="15" data-canpost="false" data-cansee="true" data-comments-unavailable="false" data-addlink-disabled="true"><li id="comment-7189961" class="comment js-comment" data-comment-id="7189961" data-comment-owner-id="252950" data-comment-score="8"><div class="js-comment-actions comment-actions"><div class="comment-score js-comment-score js-comment-edit-hide"><span class="warm" title="number of 'useful comment' votes received">8</span></div></div><div class="comment-text js-comment-text-and-form"><div class="comment-body js-comment-edit-hide"><span class="comment-copy">With INNODB typed dabatase and other complex column types like BLOB and DATE defined, I recommend using the following switches: <code>--opt --single-transaction --comments --hex-blob --dump-date --no-autocommit --all-databases</code></span><svg aria-hidden="true" class="va-text-bottom o50 svg-icon iconPencilSm" width="14" height="14" viewbox="0 0 14 14"></svg></div></div></li></ul></div></div><ul><li id="comment-7189961" class="comment js-comment" data-comment-id="7189961" data-comment-owner-id="252950" data-comment-score="8"><div class="comment-text js-comment-text-and-form"><div class="comment-body js-comment-edit-hide"> </div></div></li><li id="comment-14109690" class="comment js-comment" data-comment-id="14109690" data-comment-owner-id="731486" data-comment-score="5"><div class="js-comment-actions comment-actions"><div class="comment-score js-comment-score js-comment-edit-hide"><span class="warm" title="number of 'useful comment' votes received">5</span></div></div><div class="comment-text js-comment-text-and-form"><div class="comment-body js-comment-edit-hide"><span class="comment-copy">Is <code>RESET_SLAVE</code> necessary? Note that these instructions reset the replication user and password, so you'll have to reenter those with <code>CHANGE MASTER TO...</code></span><a class="comment-link" href="https://stackoverflow.com/questions/2366018/how-to-re-sync-the-mysql-db-if-master-and-slave-have-different-database-incase-o#comment14109690_3229580" aria-label="Link to comment"></a></div></div></li><li id="comment-22824998" class="comment js-comment" data-comment-id="22824998" data-comment-owner-id="1238986" data-comment-score="32"><div class="js-comment-actions comment-actions"><div class="comment-score js-comment-score js-comment-edit-hide"><span class="supernova" title="number of 'useful comment' votes received">32</span></div></div><div class="comment-text js-comment-text-and-form"><div class="comment-body js-comment-edit-hide"><span class="comment-copy">If you use the --master-data flag when calling mysqldump on the master, the CHANGE MASTER TO command is written into the dump file and thus saves the step of executing it after importing the dump file into the slave.</span><a class="comment-link" href="https://stackoverflow.com/questions/2366018/how-to-re-sync-the-mysql-db-if-master-and-slave-have-different-database-incase-o#comment22985683_3229580" aria-label="Link to comment"></a></div></div></li></ul></div><footer class="post__footer"><div class="post__last-updated">This article was updated on <time datetime="2024-05-11T01:16">May 11, 2024</time></div><div class="post__share"><a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fd4nc1ntr33.funkysys.org%2Fmysql-masterslave-replication%2F" class="js-share facebook tltp tltp--top" aria-label="Facebook" rel="nofollow noopener noreferrer"><svg><use xlink:href="https://d4nc1ntr33.funkysys.org/assets/svg/svg-map.svg#facebook"/></svg> <span>Facebook</span> </a><a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fd4nc1ntr33.funkysys.org%2Fmysql-masterslave-replication%2F&amp;via=d4nc1ntr33&amp;text=mysql%20master%2Fslave%20replication" class="js-share twitter tltp tltp--top" aria-label="Twitter" rel="nofollow noopener noreferrer"><svg><use xlink:href="https://d4nc1ntr33.funkysys.org/assets/svg/svg-map.svg#twitter"/></svg> <span>Twitter</span> </a><a href="https://pinterest.com/pin/create/button/?url=https%3A%2F%2Fd4nc1ntr33.funkysys.org%2Fmysql-masterslave-replication%2F&amp;media=undefined&amp;description=mysql%20master%2Fslave%20replication" class="js-share pinterest tltp tltp--top" aria-label="Pinterest" rel="nofollow noopener noreferrer"><svg><use xlink:href="https://d4nc1ntr33.funkysys.org/assets/svg/svg-map.svg#pinterest"/></svg> <span>Pinterest</span></a></div></footer></div></article><div class="post__section post__related"><div class="main__inner"><h3 class="post__section__title">Related post</h3><div class="post__related__wrap"><article class="c-card"><div class="c-card__meta"><div class="c-card__author"><a href="https://d4nc1ntr33.funkysys.org/authors/dario/">d4nc1ntr33</a></div><time datetime="2024-05-14T23:54">May 14, 2024</time></div><header class="c-card__header"><h2 class="c-card__title"><a href="https://d4nc1ntr33.funkysys.org/fix-broken-mysql-replication-relay-log-read-failure-slave-crash/">fix broken MySQL replication (Relay log read failure) slave crash</a></h2><p>How to fix a broken MySQL / MariaDB replication (Relay log read&hellip;</p></header></article><article class="c-card"><div class="c-card__meta"><div class="c-card__author"><a href="https://d4nc1ntr33.funkysys.org/authors/dario/">d4nc1ntr33</a></div><time datetime="2024-02-22T21:32">Feb 22, 2024 </time><a href="https://d4nc1ntr33.funkysys.org/tags/mariadb/" class="c-card-tag">mariadb</a></div><header class="c-card__header"><h2 class="c-card__title"><a href="https://d4nc1ntr33.funkysys.org/pgless-greatermysqlless-greatersqlite-sqlalchemy/">pg&lt;-&gt;mysql&lt;-&gt;sqlite SQLAlchemy</a></h2><p>Advanced queries with sqlalchemy https://www.slingacademy.com/article/sqlalchemy-how-to-use-group-by-with-count/ https://stackoverflow.com/questions/3890518/convert-mysql-to-sqlite https://github.com/dumblob/mysql2sqlite https://www.rebasedata.com/convert-mysql-to-sqlite-online curl -F 'files[]=@file.sql' 'https://www.rebasedata.com/api/v1/convert?outputFormat=sqlite&amp;errorResponse=zip'&hellip;</p></header></article></div></div></div></main><div class="right-bar"><div class="right-bar__inner"><div class="sidebar"><section class="box authors"><h3 class="box__title">Authors</h3><ul class="authors__cotainer"><li class="authors__item"><div><a href="https://d4nc1ntr33.funkysys.org/authors/dario/" class="authors__title">d4nc1ntr33</a> <span class="authors__meta">Post: 37</span></div></li></ul></section><section class="box tags"><h3 class="box__title">Recommended Topics</h3><ul class="tags__list"><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/android/" class="btn btn--gray">android <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/blamethedev/" class="btn btn--gray">blamethedev <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/crypto/" class="btn btn--gray">crypto <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/dkim/" class="btn btn--gray">dkim <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/dmarc/" class="btn btn--gray">dmarc <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/flask/" class="btn btn--gray">flask <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/flutter/" class="btn btn--gray">flutter <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/go/" class="btn btn--gray">go <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/lighthouse/" class="btn btn--gray">lighthouse <sup>(1)</sup></a></li><li class="tags__item"><a href="https://d4nc1ntr33.funkysys.org/tags/mariadb/" class="btn btn--gray">mariadb <sup>(1)</sup></a></li></ul></section><section class="box newsletter"><h3 class="box__title">Subscribe to Mono</h3><p class="newsletter__desc">Sign up to receive email updates and to hear what's going on with us!</p><form>...</form></section><div class="box copyright">Powered by Publii - Open-Source CMS for Static Websites</div></div></div></div></div><script defer="defer" src="https://d4nc1ntr33.funkysys.org/assets/js/scripts.min.js?v=12d8fcd46db8fdc7af6797ec26849875"></script><script>var images = document.querySelectorAll('img[loading]');
+        for (var i = 0; i < images.length; i++) {
+            if (images[i].complete) {
+                images[i].classList.add('is-loaded');
+            } else {
+                images[i].addEventListener('load', function () {
+                    this.classList.add('is-loaded');
+                }, false);
+            }
+        }</script><div class="pcb" data-behaviour="badge" data-behaviour-link="#cookie-settings" data-revision="1" data-config-ttl="7" data-debug-mode="false"><div role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="pcb-title" aria-describedby="pcb-txt" class="pcb__banner"><div class="pcb__inner"><div id="pcb-title" role="heading" aria-level="2" class="pcb__title">This website uses cookies</div><div id="pcb-txt" class="pcb__txt">Select which cookies to opt-in to via the checkboxes below; our website uses cookies to examine site traffic and user activity while on our site, for marketing, and to provide social media functionality. <a href="https://d4nc1ntr33.funkysys.org/privacy-policy/">More details...</a></div><div class="pcb__buttons"><button type="button" class="pcb__btn pcb__btn--solid pcb__btn--accept">Accept all</button></div></div></div><button class="pcb__badge" aria-label="Cookie Policy" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" width="40" height="40" viewBox="0 0 23 23" fill="currentColor"><path d="M21.41 12.71c-.08-.01-.15 0-.22 0h-.03c-.03 0-.05 0-.08.01-.07 0-.13.01-.19.04-.52.21-1.44.19-2.02-.22-.44-.31-.65-.83-.62-1.53a.758.758 0 0 0-.27-.61.73.73 0 0 0-.65-.14c-1.98.51-3.49.23-4.26-.78-.82-1.08-.73-2.89.24-4.49.14-.23.14-.52 0-.75a.756.756 0 0 0-.67-.36c-.64.03-1.11-.1-1.31-.35-.19-.26-.13-.71-.01-1.29.04-.18.06-.38.03-.59-.05-.4-.4-.7-.81-.66C5.1 1.54 1 6.04 1 11.48 1 17.28 5.75 22 11.6 22c5.02 0 9.39-3.54 10.39-8.42.08-.4-.18-.78-.58-.87Zm-9.81 7.82c-5.03 0-9.12-4.06-9.12-9.06 0-4.34 3.05-8 7.25-8.86-.08.7.05 1.33.42 1.81.24.32.66.67 1.38.84-.76 1.86-.65 3.78.36 5.11.61.81 2.03 2 4.95 1.51.18.96.71 1.54 1.18 1.87.62.43 1.38.62 2.1.62.05 0 .09 0 .13-.01-1.23 3.64-4.7 6.18-8.64 6.18ZM13 17c0 .55-.45 1-1 1s-1-.45-1-1 .45-1 1-1 1 .45 1 1Zm5.29-12.3a.99.99 0 0 1-.29-.71c0-.55.45-.99 1-.99a1 1 0 0 1 .71.3c.19.19.29.44.29.71 0 .55-.45.99-1 .99a1 1 0 0 1-.71-.3ZM9 13.5c0 .83-.67 1.5-1.5 1.5S6 14.33 6 13.5 6.67 12 7.5 12s1.5.67 1.5 1.5Zm3.25.81a.744.744 0 0 1-.06-1.05c.28-.32.75-.34 1.05-.06.31.28.33.75.05 1.06-.15.16-.35.25-.56.25-.18 0-.36-.06-.5-.19ZM8.68 7.26c.41.37.44 1 .07 1.41-.2.22-.47.33-.75.33a.96.96 0 0 1-.67-.26c-.41-.37-.44-1-.07-1.41.37-.42 1-.45 1.41-.08Zm11.48 1.88c.18-.19.52-.19.7 0 .05.04.09.1.11.16.03.06.04.12.04.19 0 .13-.05.26-.15.35-.09.1-.22.15-.35.15s-.26-.05-.35-.15a.355.355 0 0 1-.11-.16.433.433 0 0 1-.04-.19c0-.13.05-.26.15-.35Zm-4.93-1.86a.75.75 0 1 1 1.059-1.06.75.75 0 0 1-1.059 1.06Z"/></svg></button></div><script>(function(win) {
+    if (!document.querySelector('.pcb')) {
+        return;
+    }
+
+    var cbConfig = {
+        behaviour: document.querySelector('.pcb').getAttribute('data-behaviour'),
+        behaviourLink: document.querySelector('.pcb').getAttribute('data-behaviour-link'),
+        revision: document.querySelector('.pcb').getAttribute('data-revision'),
+        configTTL: parseInt(document.querySelector('.pcb').getAttribute('data-config-ttl'), 10),
+        debugMode: document.querySelector('.pcb').getAttribute('data-debug-mode') === 'true',
+        initialState: null,
+        initialLsState: null,
+        previouslyAccepted: []
+    };
+
+    var cbUI = {
+        wrapper: document.querySelector('.pcb'),
+        banner: {
+            element: null,
+            btnAccept: null,
+            btnReject: null,
+            btnConfigure: null
+        },
+        popup: {
+            element: null,
+            btnClose: null,
+            btnSave: null,
+            btnAccept: null,
+            btnReject: null,
+            checkboxes: null,
+        },
+        overlay: null,
+        badge: null,
+        blockedScripts: document.querySelectorAll('script[type^="gdpr-blocker/"]'),
+        triggerLinks: cbConfig.behaviourLink ? document.querySelectorAll('a[href*="' + cbConfig.behaviourLink + '"]') : null
+    };
+
+    function initUI () {
+        // setup banner elements
+        cbUI.banner.element = cbUI.wrapper.querySelector('.pcb__banner');
+        cbUI.banner.btnAccept = cbUI.banner.element.querySelector('.pcb__btn--accept');
+        cbUI.banner.btnReject = cbUI.banner.element.querySelector('.pcb__btn--reject');
+        cbUI.banner.btnConfigure = cbUI.banner.element.querySelector('.pcb__btn--configure');
+
+        // setup popup elements
+        if (cbUI.wrapper.querySelector('.pcb__popup')) {
+            cbUI.popup.element = cbUI.wrapper.querySelector('.pcb__popup');
+            cbUI.popup.btnClose = cbUI.wrapper.querySelector('.pcb__popup__close');
+            cbUI.popup.btnSave = cbUI.popup.element.querySelector('.pcb__btn--save');
+            cbUI.popup.btnAccept = cbUI.popup.element.querySelector('.pcb__btn--accept');
+            cbUI.popup.btnReject = cbUI.popup.element.querySelector('.pcb__btn--reject');
+            cbUI.popup.checkboxes = cbUI.popup.element.querySelector('input[type="checkbox"]');
+            // setup overlay
+            cbUI.overlay = cbUI.wrapper.querySelector('.pcb__overlay');
+        }
+
+        cbUI.badge = cbUI.wrapper.querySelector('.pcb__badge');
+
+        if (cbConfig.behaviour.indexOf('link') > -1) {
+            for (var i = 0; i < cbUI.triggerLinks.length; i++) {
+                cbUI.triggerLinks[i].addEventListener('click', function(e) {
+                    e.preventDefault();
+                    showBannerOrPopup();
+                });
+            }
+        }
+    }
+
+    function initState () {
+        var lsKeyName = getConfigName();
+        var currentConfig = localStorage.getItem(lsKeyName);
+        var configIsFresh = checkIfConfigIsFresh();
+
+        if (!configIsFresh || currentConfig === null) {
+            if (cbConfig.debugMode) {
+                console.log('🍪 Config not found, or configuration expired');
+            }
+
+            if (window.publiiCBGCM) {
+                gtag('consent', 'default', {
+                    'ad_storage': window.publiiCBGCM.defaultState.ad_storage ? 'granted' : 'denied',
+                    'ad_personalization': window.publiiCBGCM.defaultState.ad_personalization ? 'granted' : 'denied',
+                    'ad_user_data': window.publiiCBGCM.defaultState.ad_user_data ? 'granted' : 'denied',
+                    'analytics_storage': window.publiiCBGCM.defaultState.analytics_storage ? 'granted' : 'denied',
+                    'personalization_storage': window.publiiCBGCM.defaultState.personalization_storage ? 'granted' : 'denied',
+                    'functionality_storage': window.publiiCBGCM.defaultState.functionality_storage ? 'granted' : 'denied',
+                    'security_storage': window.publiiCBGCM.defaultState.security_storage ? 'granted' : 'denied'
+                });  
+                
+                if (cbConfig.debugMode) {
+                    console.log('🍪 GCMv2 DEFAULT STATE: ' + JSON.stringify({
+                        'ad_storage': window.publiiCBGCM.defaultState.ad_storage ? 'granted' : 'denied',
+                        'ad_personalization': window.publiiCBGCM.defaultState.ad_personalization ? 'granted' : 'denied',
+                        'ad_user_data': window.publiiCBGCM.defaultState.ad_user_data ? 'granted' : 'denied',
+                        'analytics_storage': window.publiiCBGCM.defaultState.analytics_storage ? 'granted' : 'denied',
+                        'personalization_storage': window.publiiCBGCM.defaultState.personalization_storage ? 'granted' : 'denied',
+                        'functionality_storage': window.publiiCBGCM.defaultState.functionality_storage ? 'granted' : 'denied',
+                        'security_storage': window.publiiCBGCM.defaultState.security_storage ? 'granted' : 'denied'
+                    }));
+                }
+            }
+
+            showBanner();
+        } else if (typeof currentConfig === 'string') {
+            if (cbConfig.debugMode) {
+                console.log('🍪 Config founded');
+            }
+
+            cbConfig.initialLsState = currentConfig.split(',');
+
+            if (window.publiiCBGCM) {
+                gtag('consent', 'default', {
+                    'ad_storage': getDefaultConsentState(currentConfig, 'ad_storage'),
+                    'ad_personalization': getDefaultConsentState(currentConfig, 'ad_personalization'),
+                    'ad_user_data': getDefaultConsentState(currentConfig, 'ad_user_data'),
+                    'analytics_storage': getDefaultConsentState(currentConfig, 'analytics_storage'),
+                    'personalization_storage': getDefaultConsentState(currentConfig, 'personalization_storage'),
+                    'functionality_storage': getDefaultConsentState(currentConfig, 'functionality_storage'),
+                    'security_storage': getDefaultConsentState(currentConfig, 'security_storage')
+                });
+                
+                if (cbConfig.debugMode) {
+                    console.log('🍪 GCMv2 DEFAULT STATE: ' + JSON.stringify({
+                        'ad_storage': getDefaultConsentState(currentConfig, 'ad_storage'),
+                        'ad_personalization': getDefaultConsentState(currentConfig, 'ad_personalization'),
+                        'ad_user_data': getDefaultConsentState(currentConfig, 'ad_user_data'),
+                        'analytics_storage': getDefaultConsentState(currentConfig, 'analytics_storage'),
+                        'personalization_storage': getDefaultConsentState(currentConfig, 'personalization_storage'),
+                        'functionality_storage': getDefaultConsentState(currentConfig, 'functionality_storage'),
+                        'security_storage': getDefaultConsentState(currentConfig, 'security_storage')
+                    }));
+                }
+            }
+
+            showBadge();
+
+            if (cbUI.popup.element) {
+                var allowedGroups = currentConfig.split(',');
+                var checkedCheckboxes = cbUI.popup.element.querySelectorAll('input[type="checkbox"]:checked');
+
+                for (var j = 0; j < checkedCheckboxes.length; j++) {
+                    var name = checkedCheckboxes[j].getAttribute('data-group-name');
+
+                    if (name && name !== '-' && allowedGroups.indexOf(name) === -1) {
+                        checkedCheckboxes[j].checked = false;
+                    }
+                }
+
+                for (var i = 0; i < allowedGroups.length; i++) {
+                    var checkbox = cbUI.popup.element.querySelector('input[type="checkbox"][data-group-name="' + allowedGroups[i] + '"]');
+
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+
+                    allowCookieGroup(allowedGroups[i]);
+                }
+            }
+        }
+
+        setTimeout(function () {
+            cbConfig.initialState = getInitialStateOfConsents();
+        }, 0);
+    }
+
+    function checkIfConfigIsFresh () {
+        var lastConfigSave = localStorage.getItem('publii-gdpr-cookies-config-save-date');
+
+        if (lastConfigSave === null) {
+            return false;
+        }
+
+        lastConfigSave = parseInt(lastConfigSave, 10);
+
+        if (lastConfigSave === 0) {
+            return true;
+        }
+
+        if (+new Date() - lastConfigSave < cbConfig.configTTL * 24 * 60 * 60 * 1000) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function getDefaultConsentState (currentConfig, consentGroup) {
+        let configGroups = currentConfig.split(',');
+
+        for (let i = 0; i < configGroups.length; i++) {
+            let groupName = configGroups[i];
+            let group = window.publiiCBGCM.groups.find(group => group.cookieGroup === groupName);
+
+            if (group && group[consentGroup]) {
+                return 'granted';
+            }
+        }  
+        
+        if (window.publiiCBGCM.defaultState[consentGroup]) {
+            return 'granted'; 
+        }
+        
+        return 'denied';
+    }
+
+    function initBannerEvents () {
+        cbUI.banner.btnAccept.addEventListener('click', function (e) {
+            e.preventDefault();
+            acceptAllCookies('banner');
+            showBadge();
+        }, false);
+
+        if (cbUI.banner.btnReject) {
+            cbUI.banner.btnReject.addEventListener('click', function (e) {
+                e.preventDefault();
+                rejectAllCookies();
+                showBadge();
+            }, false);
+        }
+
+        if (cbUI.banner.btnConfigure) {
+            cbUI.banner.btnConfigure.addEventListener('click', function (e) {
+                e.preventDefault();
+                hideBanner();
+                showAdvancedPopup();
+                showBadge();
+            }, false);
+        }
+    }
+
+    function initPopupEvents () {
+        if (!cbUI.popup.element) {
+            return;
+        }
+
+        cbUI.overlay.addEventListener('click', function (e) {
+            hideAdvancedPopup();
+        }, false);
+
+        cbUI.popup.element.addEventListener('click', function (e) {
+            e.stopPropagation();
+        }, false);
+
+        cbUI.popup.btnAccept.addEventListener('click', function (e) {
+            e.preventDefault();
+            acceptAllCookies('popup');
+        }, false);
+
+        cbUI.popup.btnReject.addEventListener('click', function (e) {
+            e.preventDefault();
+            rejectAllCookies();
+        }, false);
+
+        cbUI.popup.btnSave.addEventListener('click', function (e) {
+            e.preventDefault();
+            saveConfiguration();
+        }, false);
+
+        cbUI.popup.btnClose.addEventListener('click', function (e) {
+            e.preventDefault();
+            hideAdvancedPopup();
+        }, false);
+    }
+
+    function initBadgeEvents () {
+        if (!cbUI.badge) {
+            return;
+        }
+
+        cbUI.badge.addEventListener('click', function (e) {
+            showBannerOrPopup();
+        }, false);
+    }
+
+    initUI();
+    initState();
+    initBannerEvents();
+    initPopupEvents();
+    initBadgeEvents();
+
+    /**
+     * API
+     */
+    function addScript (src, inline) {
+        var newScript = document.createElement('script');
+
+        if (src) {
+            newScript.setAttribute('src', src);
+        }
+
+        if (inline) {
+            newScript.text = inline;
+        }
+
+        document.body.appendChild(newScript);
+    }
+
+    function allowCookieGroup (allowedGroup) {
+        var scripts = document.querySelectorAll('script[type="gdpr-blocker/' + allowedGroup + '"]');
+        cbConfig.previouslyAccepted.push(allowedGroup);
+    
+        for (var j = 0; j < scripts.length; j++) {
+            addScript(scripts[j].src, scripts[j].text);
+        }
+
+        var groupEvent = new Event('publii-cookie-banner-unblock-' + allowedGroup);
+        document.body.dispatchEvent(groupEvent);
+        unlockEmbeds(allowedGroup);
+
+        if (cbConfig.debugMode) {
+            console.log('🍪 Allowed group: ' + allowedGroup);
+        }
+
+        if (window.publiiCBGCM && cbConfig.initialLsState.indexOf(allowedGroup) === -1) {
+            let consentResult = {};
+            let group = window.publiiCBGCM.groups.find(group => group.cookieGroup === allowedGroup);
+
+            if (group) {
+                let foundSomeConsents = false;
+
+                Object.keys(group).forEach(key => {
+                    if (key !== 'cookieGroup' && group[key] === true) {
+                        consentResult[key] = 'granted';
+                        foundSomeConsents = true;
+                    }
+                });
+
+                if (foundSomeConsents) {
+                    gtag('consent', 'update', consentResult);   
+
+                    if (cbConfig.debugMode) {
+                        console.log('🍪 GCMv2 UPDATE: ' + JSON.stringify(consentResult));
+                    }
+                }
+            }
+        }
+    }
+
+    function showBannerOrPopup () {
+        if (cbUI.popup.element) {
+            showAdvancedPopup();
+        } else {
+            showBanner();
+        }
+    }
+
+    function showAdvancedPopup () {
+        cbUI.popup.element.classList.add('is-visible');
+        cbUI.overlay.classList.add('is-visible');
+        cbUI.popup.element.setAttribute('aria-hidden', 'false');
+        cbUI.overlay.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideAdvancedPopup () {
+        cbUI.popup.element.classList.remove('is-visible');
+        cbUI.overlay.classList.remove('is-visible');
+        cbUI.popup.element.setAttribute('aria-hidden', 'true');
+        cbUI.overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    function showBanner () {
+        cbUI.banner.element.classList.add('is-visible');
+        cbUI.banner.element.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideBanner () {
+        cbUI.banner.element.classList.remove('is-visible');
+        cbUI.banner.element.setAttribute('aria-hidden', 'true');
+    }
+
+    function showBadge () {
+        if (!cbUI.badge) {
+            return;
+        }
+
+        cbUI.badge.classList.add('is-visible');
+        cbUI.badge.setAttribute('aria-hidden', 'false');
+    }
+
+    function getConfigName () {
+        var lsKeyName = 'publii-gdpr-allowed-cookies';
+
+        if (cbConfig.revision) {
+            lsKeyName = lsKeyName + '-v' + parseInt(cbConfig.revision, 10);
+        }
+
+        return lsKeyName;
+    }
+
+    function storeConfiguration (allowedGroups) {
+        var lsKeyName = getConfigName();
+        var dataToStore = allowedGroups.join(',');
+        localStorage.setItem(lsKeyName, dataToStore);
+
+        if (cbConfig.configTTL === 0) {
+            localStorage.setItem('publii-gdpr-cookies-config-save-date', 0);
+
+            if (cbConfig.debugMode) {
+                console.log('🍪 Store never expiring configuration');
+            }
+        } else {
+            localStorage.setItem('publii-gdpr-cookies-config-save-date', +new Date());
+        }
+    }
+
+    function getInitialStateOfConsents () {
+        if (!cbUI.popup.element) {
+            return [];
+        }
+
+        var checkedGroups = cbUI.popup.element.querySelectorAll('input[type="checkbox"]:checked');
+        var groups = [];
+
+        for (var i = 0; i < checkedGroups.length; i++) {
+            var allowedGroup = checkedGroups[i].getAttribute('data-group-name');
+
+            if (allowedGroup !== '') {
+                groups.push(allowedGroup);
+            }
+        }
+
+        if (cbConfig.debugMode) {
+            console.log('🍪 Initial state: ' + groups.join(', '));
+        }
+
+        return groups;
+    }
+
+    function getCurrentStateOfConsents () {
+        if (!cbUI.popup.element) {
+            return [];
+        }
+
+        var checkedGroups = cbUI.popup.element.querySelectorAll('input[type="checkbox"]:checked');
+        var groups = [];
+
+        for (var i = 0; i < checkedGroups.length; i++) {
+            var allowedGroup = checkedGroups[i].getAttribute('data-group-name');
+
+            if (allowedGroup !== '') {
+                groups.push(allowedGroup);
+            }
+        }
+
+        if (cbConfig.debugMode) {
+            console.log('🍪 State to save: ' + groups.join(', '));
+        }
+
+        return groups;
+    }
+
+    function getAllGroups () {
+        if (!cbUI.popup.element) {
+            return [];
+        }
+
+        var checkedGroups = cbUI.popup.element.querySelectorAll('input[type="checkbox"]');
+        var groups = [];
+
+        for (var i = 0; i < checkedGroups.length; i++) {
+            var allowedGroup = checkedGroups[i].getAttribute('data-group-name');
+
+            if (allowedGroup !== '') {
+                groups.push(allowedGroup);
+            }
+        }
+
+        return groups;
+    }
+
+    function acceptAllCookies (source) {
+        var groupsToAccept = getAllGroups();
+        storeConfiguration(groupsToAccept);
+
+        for (var i = 0; i < groupsToAccept.length; i++) {
+            var group = groupsToAccept[i];
+
+            if (cbConfig.initialState.indexOf(group) > -1 || cbConfig.previouslyAccepted.indexOf(group) > -1) {
+                if (cbConfig.debugMode) {
+                    console.log('🍪 Skip previously activated group: ' + group);
+                }
+
+                continue;
+            }
+
+            allowCookieGroup(group);
+        }
+
+        if (cbUI.popup.element) {
+            var checkboxesToCheck = cbUI.popup.element.querySelectorAll('input[type="checkbox"]');
+
+            for (var j = 0; j < checkboxesToCheck.length; j++) {
+                checkboxesToCheck[j].checked = true;
+            }
+        }
+
+        if (cbConfig.debugMode) {
+            console.log('🍪 Accept all cookies: ', groupsToAccept.join(', '));
+        }
+
+        if (source === 'popup') {
+            hideAdvancedPopup();
+        } else if (source === 'banner') {
+            hideBanner();
+        }
+    }
+
+    function rejectAllCookies () {
+        if (cbConfig.debugMode) {
+            console.log('🍪 Reject all cookies');
+        }
+
+        storeConfiguration([]);
+        setTimeout(function () {
+            window.location.reload();
+        }, 100);
+    }
+
+    function saveConfiguration () {
+        var groupsToAccept = getCurrentStateOfConsents();
+        storeConfiguration(groupsToAccept);
+
+        if (cbConfig.debugMode) {
+            console.log('🍪 Save new config: ', groupsToAccept.join(', '));
+        }
+
+        if (reloadIsNeeded(groupsToAccept)) {
+            setTimeout(function () {
+                window.location.reload();
+            }, 100);
+            return;
+        }
+
+        for (var i = 0; i < groupsToAccept.length; i++) {
+            var group = groupsToAccept[i];
+
+            if (cbConfig.initialState.indexOf(group) > -1 || cbConfig.previouslyAccepted.indexOf(group) > -1) {
+                if (cbConfig.debugMode) {
+                    console.log('🍪 Skip previously activated group: ' + group);
+                }
+
+                continue;
+            }
+
+            allowCookieGroup(group);
+        }
+
+        hideAdvancedPopup();
+    }
+
+    function reloadIsNeeded (groupsToAccept) {
+        // check if user rejected consent for initial groups
+        var initialGroups = cbConfig.initialState;
+        var previouslyAcceptedGroups = cbConfig.previouslyAccepted;
+        var groupsToCheck = initialGroups.concat(previouslyAcceptedGroups);
+
+        for (var i = 0; i < groupsToCheck.length; i++) {
+            var groupToCheck = groupsToCheck[i];
+
+            if (groupToCheck !== '' && groupsToAccept.indexOf(groupToCheck) === -1) {
+                if (cbConfig.debugMode) {
+                    console.log('🍪 Reload is needed due lack of: ', groupToCheck);
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function unlockEmbeds (cookieGroup) {
+        var iframesToUnlock = document.querySelectorAll('.pec-wrapper[data-consent-group-id="' + cookieGroup + '"]');
+
+        for (var i = 0; i < iframesToUnlock.length; i++) {
+            var iframeWrapper = iframesToUnlock[i];
+            iframeWrapper.querySelector('.pec-overlay').classList.remove('is-active');
+            iframeWrapper.querySelector('.pec-overlay').setAttribute('aria-hidden', 'true');
+            var iframe = iframeWrapper.querySelector('iframe');
+            iframe.setAttribute('src', iframe.getAttribute('data-consent-src'));
+        }
+    }
+
+    win.publiiEmbedConsentGiven = function (cookieGroup) {
+        // it will unlock embeds
+        allowCookieGroup(cookieGroup);
+
+        var checkbox = cbUI.popup.element.querySelector('input[type="checkbox"][data-group-name="' + cookieGroup + '"]');
+
+        if (checkbox) {
+            checkbox.checked = true;
+        }
+
+        var groupsToAccept = getCurrentStateOfConsents();
+        storeConfiguration(groupsToAccept);
+
+        if (cbConfig.debugMode) {
+            console.log('🍪 Save new config: ', groupsToAccept.join(', '));
+        }
+    }
+})(window);</script></body></html>
